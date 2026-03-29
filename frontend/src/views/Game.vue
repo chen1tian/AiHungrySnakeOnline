@@ -11,6 +11,9 @@
     <!-- Scoreboard -->
     <Scoreboard :gameState="game.gameState" :myPlayerId="game.myPlayerId" />
 
+    <!-- Virtual D-Pad for mobile -->
+    <VirtualDPad :visible="isMobile" @direction="handleDpadDirection" />
+
     <!-- Leave button -->
     <button class="leave-btn" @click="leaveGame">✕ 离开</button>
   </div>
@@ -24,6 +27,7 @@ import { connectToRoom, sendMessage, disconnect } from '../api/ws.js'
 import GameCanvas from '../components/GameCanvas.vue'
 import RespawnTimer from '../components/RespawnTimer.vue'
 import Scoreboard from '../components/Scoreboard.vue'
+import VirtualDPad from '../components/VirtualDPad.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +36,11 @@ const gamePageRef = ref(null)
 
 const roomId = route.params.roomId
 let lastDirection = ''
+
+const isMobile = ref(
+  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+  ('ontouchstart' in window && window.innerWidth <= 1024)
+)
 
 onMounted(() => {
   // Focus the game page for keyboard events
@@ -56,6 +65,13 @@ function handleKeydown(e) {
     'd': 'right', 'D': 'right', 'ArrowRight': 'right',
   }
   const direction = keyMap[e.key]
+  if (direction && direction !== lastDirection) {
+    lastDirection = direction
+    sendMessage({ type: 'input', direction })
+  }
+}
+
+function handleDpadDirection(direction) {
   if (direction && direction !== lastDirection) {
     lastDirection = direction
     sendMessage({ type: 'input', direction })
