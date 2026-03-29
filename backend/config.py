@@ -1,10 +1,11 @@
+import os
 import secrets
 
-SECRET_KEY = secrets.token_urlsafe(32)
+SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_urlsafe(32))
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
-DATABASE_URL = "sqlite+aiosqlite:///./snake_game.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./snake_game.db")
 
 # Game settings
 MAP_WIDTH = 60

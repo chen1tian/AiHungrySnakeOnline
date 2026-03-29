@@ -19,7 +19,23 @@
 
 ## 启动方式
 
-### 后端
+### Docker 部署（推荐）
+
+```bash
+docker compose up -d --build
+```
+
+浏览器打开 http://localhost 即可游玩。
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+### 本地开发
+
+#### 后端
 
 ```bash
 cd backend
@@ -27,7 +43,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 前端
+#### 前端
 
 ```bash
 cd frontend
