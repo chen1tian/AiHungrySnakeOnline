@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 
 from config import (
     MAP_WIDTH, MAP_HEIGHT, TICK_RATE, RESPAWN_TIME,
-    INITIAL_SNAKE_LENGTH, SPECIAL_APPLE_INTERVAL_MIN,
+    INITIAL_SNAKE_LENGTH, INITIAL_HP, DAMAGE_IMMUNE_DURATION,
+    SPECIAL_APPLE_INTERVAL_MIN,
     SPECIAL_APPLE_INTERVAL_MAX, SPEED_BOOST_DURATION,
     SLOW_MOTION_DURATION,
 )
@@ -45,10 +46,11 @@ class GameEngine:
             snake = self._create_snake(uid, player.username, player.emoji, player.color)
             self.snakes[uid] = snake
 
-        # Generate initial apples
-        target_apple_count = max(4, len(self.room.players) * 2)
-        for _ in range(target_apple_count):
-            self._spawn_apple(AppleType.NORMAL)
+        # Generate initial drop items
+        target_count = max(4, len(self.room.players) * 2)
+        drop_types = [AppleType.HEART, AppleType.SPIKE, AppleType.SPEED, AppleType.GROWTH, AppleType.INVINCIBLE, AppleType.SLOW]
+        for _ in range(target_count):
+            self._spawn_apple(random.choice(drop_types))
 
         self._task = asyncio.create_task(self._game_loop())
 
@@ -75,6 +77,7 @@ class GameEngine:
             direction=Direction.RIGHT,
             emoji=emoji,
             color=color,
+            hp=INITIAL_HP,
         )
 
     def _random_spawn_position(self) -> Point:
@@ -181,6 +184,8 @@ class GameEngine:
                     snake.body.pop()
 
     def _check_collisions(self, now: float):
+        damage_events = []  # list of (target_snake, attacker_snake_or_None)
+
         for snake in list(self.snakes.values()):
             if not snake.alive:
                 continue
@@ -189,23 +194,22 @@ class GameEngine:
 
             # Wall collision
             if head.x < 0 or head.x >= MAP_WIDTH or head.y < 0 or head.y >= MAP_HEIGHT:
-                if not snake.is_invincible(now):
-                    self._kill_snake(snake, now)
-                else:
-                    # Bounce off wall: reverse last move
-                    snake.body.pop(0)
-                    snake.direction = OPPOSITE_DIRECTIONS[snake.direction]
+                # Always bounce off wall
+                snake.body.pop(0)
+                snake.direction = OPPOSITE_DIRECTIONS[snake.direction]
+                damage_events.append((snake, None))
                 continue
 
             # Self collision (check body excluding head)
             for segment in snake.body[1:]:
                 if head == segment:
-                    if not snake.is_invincible(now):
-                        self._kill_snake(snake, now)
+                    damage_events.append((snake, None))
                     break
 
         # Snake vs snake collision
         alive_snakes = [s for s in self.snakes.values() if s.alive]
+        head_on_processed = set()
+
         for snake in alive_snakes:
             head = snake.head()
             for other in alive_snakes:
@@ -214,29 +218,30 @@ class GameEngine:
                 # Check if same team (same color)
                 if snake.color == other.color:
                     continue
-                # Head hits other's body (including head)
+
                 for i, segment in enumerate(other.body):
                     if head == segment:
-                        if not snake.is_invincible(now):
-                            if i == 0:
-                                # Head-on collision: both die (unless one is invincible)
-                                if not other.is_invincible(now):
-                                    self._kill_snake(snake, now)
-                                    self._kill_snake(other, now)
-                                else:
-                                    self._kill_snake(snake, now)
-                            else:
-                                # Snake eats the other
-                                snake.pending_growth += len(other.body)
-                                snake.kills += 1
-                                self._kill_snake(other, now)
+                        if i == 0:
+                            # Head-on collision: both take damage
+                            pair = tuple(sorted([snake.player_id, other.player_id]))
+                            if pair not in head_on_processed:
+                                damage_events.append((snake, other))
+                                damage_events.append((other, snake))
+                                head_on_processed.add(pair)
+                        elif i <= other.hp:
+                            # Hit head/hearts area: defender takes damage
+                            damage_events.append((other, snake))
+                        elif other.spikes > 0 and i >= len(other.body) - other.spikes:
+                            # Hit spike segments: attacker takes damage
+                            damage_events.append((snake, other))
                         else:
-                            # Invincible snake eats the other
-                            if not other.is_invincible(now):
-                                snake.pending_growth += len(other.body)
-                                snake.kills += 1
-                                self._kill_snake(other, now)
+                            # Hit regular body: attacker takes damage
+                            damage_events.append((snake, None))
                         break
+
+        # Apply all damage events
+        for target, attacker in damage_events:
+            self._damage_snake(target, now, killer=attacker)
 
     def _check_apple_collisions(self, now: float):
         for snake in self.snakes.values():
@@ -253,9 +258,7 @@ class GameEngine:
                 self.apples.pop(i)
 
     def _apply_apple_effect(self, snake: Snake, apple: Apple, now: float):
-        if apple.apple_type == AppleType.NORMAL:
-            snake.pending_growth += 1
-        elif apple.apple_type == AppleType.SPEED:
+        if apple.apple_type == AppleType.SPEED:
             snake.speed_boost_until = now + SPEED_BOOST_DURATION
         elif apple.apple_type == AppleType.GROWTH:
             snake.pending_growth += 3
@@ -263,6 +266,35 @@ class GameEngine:
             snake.invincible_until = now + apple.invincible_duration
         elif apple.apple_type == AppleType.SLOW:
             self.slow_motion_until = now + SLOW_MOTION_DURATION
+        elif apple.apple_type == AppleType.HEART:
+            snake.hp += 1
+            # Insert a heart segment right after the current last heart
+            insert_idx = min(snake.hp, len(snake.body))
+            if insert_idx > 0 and insert_idx <= len(snake.body):
+                ref_point = snake.body[insert_idx - 1]
+                snake.body.insert(insert_idx, Point(ref_point.x, ref_point.y))
+        elif apple.apple_type == AppleType.SPIKE:
+            snake.spikes += 1
+            snake.pending_growth += 1  # grows at tail
+
+    def _damage_snake(self, snake: Snake, now: float, killer: Snake | None = None):
+        if not snake.alive:
+            return
+        if snake.is_invincible(now) or snake.is_damage_immune(now):
+            return
+        snake.hp -= 1
+        snake.damage_immune_until = now + DAMAGE_IMMUNE_DURATION
+        if snake.hp <= 0:
+            if killer and killer.alive:
+                killer.kills += 1
+            self._kill_snake(snake, now)
+            return
+        # Remove one body segment (the lost heart)
+        remove_idx = snake.hp + 1
+        if remove_idx < len(snake.body):
+            snake.body.pop(remove_idx)
+        elif len(snake.body) > 1:
+            snake.body.pop()
 
     def _kill_snake(self, snake: Snake, now: float):
         if not snake.alive:
@@ -270,6 +302,8 @@ class GameEngine:
         snake.alive = False
         snake.respawn_timer = now + RESPAWN_TIME
         snake.body.clear()
+        snake.hp = 0
+        snake.spikes = 0
 
     def _handle_respawns(self, now: float):
         for snake in self.snakes.values():
@@ -283,14 +317,18 @@ class GameEngine:
                 snake.alive = True
                 snake.respawn_timer = 0
                 snake.pending_growth = 0
+                snake.hp = INITIAL_HP
+                snake.spikes = 0
+                snake.damage_immune_until = 0
 
     def _manage_apples(self, now: float):
-        # Keep minimum normal apples on map
-        normal_count = sum(1 for a in self.apples if a.apple_type == AppleType.NORMAL)
-        target_normal = max(4, len(self.snakes) * 2)
-        while normal_count < target_normal:
-            if self._spawn_apple(AppleType.NORMAL):
-                normal_count += 1
+        # Keep minimum drop items on map
+        drop_types = [AppleType.HEART, AppleType.SPIKE, AppleType.SPEED, AppleType.GROWTH, AppleType.INVINCIBLE, AppleType.SLOW]
+        total_count = len(self.apples)
+        target_count = max(4, len(self.snakes) * 2)
+        while total_count < target_count:
+            if self._spawn_apple(random.choice(drop_types)):
+                total_count += 1
             else:
                 break
 
@@ -299,6 +337,7 @@ class GameEngine:
             special_type = random.choice([
                 AppleType.SPEED, AppleType.GROWTH,
                 AppleType.INVINCIBLE, AppleType.SLOW,
+                AppleType.HEART, AppleType.SPIKE,
             ])
             self._spawn_apple(special_type)
             self.last_special_apple_time = now

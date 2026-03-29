@@ -11,6 +11,7 @@
         <span class="rank-emoji">{{ snake.emoji }}</span>
         <span class="rank-name" :style="{ color: snake.color }">{{ snake.username }}</span>
         <span class="rank-stats">
+          <span class="stat">❤️ {{ snake.hp || 0 }}</span>
           <span class="stat">🔢 {{ snake.length }}</span>
           <span class="stat">💀 {{ snake.kills }}</span>
         </span>

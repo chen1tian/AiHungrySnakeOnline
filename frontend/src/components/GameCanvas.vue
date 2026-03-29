@@ -16,11 +16,12 @@ let animFrameId = null
 let cellSize = 16
 
 const APPLE_EMOJIS = {
-  normal: '🍎',
   speed: '⚡',
   growth: '🌟',
   invincible: '🛡️',
   slow: '⏳',
+  heart: '❤️',
+  spike: '🔺',
 }
 
 onMounted(() => {
@@ -130,6 +131,12 @@ function draw() {
 
     const color = snake.color || '#4CAF50'
     const isInvincible = snake.invincible
+    const isDamageImmune = snake.damage_immune
+    const hp = snake.hp || 0
+    const spikes = snake.spikes || 0
+
+    // Blinking effect for damage immune: alternate alpha
+    const blinkAlpha = isDamageImmune && Math.floor(Date.now() / 150) % 2 === 0 ? 0.25 : 1.0
 
     // Draw body segments (from tail to head)
     for (let i = snake.body.length - 1; i >= 1; i--) {
@@ -137,17 +144,45 @@ function draw() {
       const sx = offsetX + seg.x * cellSize
       const sy = offsetY + seg.y * cellSize
 
-      // Invincible glow effect
+      ctx.globalAlpha = blinkAlpha
+
+      // Determine segment type
+      const isSpikeSegment = spikes > 0 && i >= snake.body.length - spikes
+      const isHeartSegment = i >= 1 && i <= hp
+
       if (isInvincible && Math.floor(Date.now() / 150) % 2 === 0) {
         ctx.shadowColor = color
         ctx.shadowBlur = 10
       }
 
-      ctx.fillStyle = color
-      const padding = 1
-      const radius = 4
-      drawRoundRect(ctx, sx + padding, sy + padding, cellSize - padding * 2, cellSize - padding * 2, radius)
-      ctx.fill()
+      if (isHeartSegment) {
+        // Heart segment: draw red background + heart emoji
+        ctx.fillStyle = '#cc0000'
+        const padding = 1
+        drawRoundRect(ctx, sx + padding, sy + padding, cellSize - padding * 2, cellSize - padding * 2, 4)
+        ctx.fill()
+        ctx.font = `${cellSize - 4}px serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('❤️', sx + cellSize / 2, sy + cellSize / 2 + 1)
+      } else if (isSpikeSegment) {
+        // Spike segment: orange background + spike emoji
+        ctx.fillStyle = '#ff6600'
+        const padding = 1
+        drawRoundRect(ctx, sx + padding, sy + padding, cellSize - padding * 2, cellSize - padding * 2, 4)
+        ctx.fill()
+        ctx.font = `${cellSize - 4}px serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('🔺', sx + cellSize / 2, sy + cellSize / 2 + 1)
+      } else {
+        // Regular body segment
+        ctx.fillStyle = color
+        const padding = 1
+        const radius = 4
+        drawRoundRect(ctx, sx + padding, sy + padding, cellSize - padding * 2, cellSize - padding * 2, radius)
+        ctx.fill()
+      }
 
       ctx.shadowBlur = 0
     }
@@ -156,6 +191,8 @@ function draw() {
     const head = snake.body[0]
     const hx = offsetX + head.x * cellSize
     const hy = offsetY + head.y * cellSize
+
+    ctx.globalAlpha = blinkAlpha
 
     if (isInvincible && Math.floor(Date.now() / 150) % 2 === 0) {
       ctx.shadowColor = '#FFD700'
@@ -180,14 +217,7 @@ function draw() {
       ctx.fillText('💨', hx + cellSize, hy)
     }
 
-    // Username label above head
-    ctx.font = `bold ${Math.max(10, cellSize * 0.7)}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillStyle = '#fff'
-    ctx.shadowColor = 'rgba(0,0,0,0.8)'
-    ctx.shadowBlur = 3
-    ctx.fillText(snake.username, hx + cellSize / 2, hy - 4)
-    ctx.shadowBlur = 0
+    ctx.globalAlpha = 1.0
   }
 
   // Slow motion banner

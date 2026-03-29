@@ -21,11 +21,12 @@ class Direction(str, Enum):
 
 
 class AppleType(str, Enum):
-    NORMAL = "normal"
     SPEED = "speed"
     GROWTH = "growth"
     INVINCIBLE = "invincible"
     SLOW = "slow"
+    HEART = "heart"
+    SPIKE = "spike"
 
 
 DIRECTION_VECTORS = {
@@ -72,6 +73,9 @@ class Snake:
     color: str = "#4CAF50"
     kills: int = 0
     pending_growth: int = 0
+    hp: int = 3
+    spikes: int = 0
+    damage_immune_until: float = 0
 
     def head(self) -> Point:
         return self.body[0] if self.body else Point(0, 0)
@@ -81,6 +85,9 @@ class Snake:
 
     def is_invincible(self, now: float) -> bool:
         return now < self.invincible_until
+
+    def is_damage_immune(self, now: float) -> bool:
+        return now < self.damage_immune_until
 
     def to_dict(self, now: float) -> dict:
         return {
@@ -96,13 +103,16 @@ class Snake:
             "length": len(self.body),
             "invincible": self.is_invincible(now),
             "speed_boost": self.is_speed_boosted(now),
+            "hp": self.hp,
+            "spikes": self.spikes,
+            "damage_immune": self.is_damage_immune(now),
         }
 
 
 @dataclass
 class Apple:
     position: Point
-    apple_type: AppleType = AppleType.NORMAL
+    apple_type: AppleType = AppleType.HEART
     invincible_duration: int = 0  # only for invincible apples: 3, 5, or 10
 
     def to_dict(self) -> dict:
