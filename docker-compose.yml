@@ -15,7 +15,7 @@ services:
     container_name: snake-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8087:80"
     depends_on:
       - backend
 
